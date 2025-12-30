@@ -43,4 +43,19 @@ return [
 
     'connection' => env('PASSPORT_CONNECTION'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Password Grant Client
+    |--------------------------------------------------------------------------
+    |
+    | These values are used for the OAuth 2.0 Password Grant flow. The client
+    | ID and secret should be stored in your .env file for security.
+    |
+    */
+
+    'password_grant_client' => [
+        'id' => env('PASSPORT_PASSWORD_CLIENT_ID'),
+        'secret' => env('PASSPORT_PASSWORD_CLIENT_SECRET'),
+    ],
+
 ];

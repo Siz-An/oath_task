@@ -20,10 +20,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Register Passport routes for OAuth 2.0 authentication
-        Passport::routes();
-
-        // Set token expiration times
+        // Set token expiration times for Passport
+        // Note: In Passport v13+, routes are automatically registered
         Passport::tokensExpireIn(now()->addDays(15));
         Passport::refreshTokensExpireIn(now()->addDays(30));
         Passport::personalAccessTokensExpireIn(now()->addMonths(6));

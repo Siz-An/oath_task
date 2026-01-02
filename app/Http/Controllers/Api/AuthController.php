@@ -112,7 +112,24 @@ class AuthController extends Controller
             ]
         );
 
-        return app()->handle($tokenRequest);
+        $response = app()->handle($tokenRequest);
+        $content = $response->getContent();
+        $tokenData = json_decode($content, true);
+        
+        if ($response->getStatusCode() !== 200) {
+            return response()->json($tokenData, $response->getStatusCode());
+        }
+        
+        return response()->json([
+            'message' => 'Login successful',
+            'user' => $user,
+            'token' => [
+                'access_token' => $tokenData['access_token'],
+                'refresh_token' => $tokenData['refresh_token'],
+                'token_type' => $tokenData['token_type'],
+                'expires_in' => $tokenData['expires_in'],
+            ],
+        ]);
     }
 
 

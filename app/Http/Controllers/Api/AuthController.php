@@ -10,16 +10,12 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
-use Laravel\Passport\TokenRepository;
 use Laravel\Passport\RefreshTokenRepository;
 
 class AuthController extends Controller
 {
     /**
      * Register a new user.
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function register(Request $request): JsonResponse
     {
@@ -35,27 +31,22 @@ class AuthController extends Controller
             'password' => Hash::make($validated['password']),
         ]);
 
-        // Generate personal access token for the new user
         $tokenResult = $user->createToken('Personal Access Token');
-        $accessToken = $tokenResult->accessToken;
-        $expiresAt = $tokenResult->getToken() ? $tokenResult->getToken()->expires_at : null;
+        $token = $tokenResult->token;
 
         return response()->json([
             'message' => 'User registered successfully',
             'user' => $user,
             'token' => [
-                'access_token' => $accessToken,
-                'token_type' => 'Bearer',
-                'expires_at' => $expiresAt,
+                'access_token' => $tokenResult->accessToken,
+                'token_type'   => 'Bearer',
+                'expires_in'   => now()->diffInSeconds($token->expires_at),
             ],
         ], 201);
     }
 
     /**
-     * Login user using personal access token.
-     *
-     * @param Request $request
-     * @return JsonResponse
+     * Login user (Personal Access Token).
      */
     public function login(Request $request): JsonResponse
     {
@@ -72,31 +63,22 @@ class AuthController extends Controller
 
         $user = Auth::user();
 
-        // Revoke all existing tokens (optional - for single device login)
-        // $user->tokens()->delete();
-
-        // Generate new personal access token
         $tokenResult = $user->createToken('Personal Access Token');
-        $accessToken = $tokenResult->accessToken;
-        $expiresAt = $tokenResult->getToken() ? $tokenResult->getToken()->expires_at : null;
+        $token = $tokenResult->token;
 
         return response()->json([
             'message' => 'Login successful',
             'user' => $user,
             'token' => [
-                'access_token' => $accessToken,
-                'token_type' => 'Bearer',
-                'expires_at' => $expiresAt,
+                'access_token' => $tokenResult->accessToken,
+                'token_type'   => 'Bearer',
+                'expires_in'   => now()->diffInSeconds($token->expires_at),
             ],
         ]);
     }
 
     /**
-     * Login user using Password Grant (OAuth 2.0).
-     * This method uses the password grant client to issue tokens.
-     *
-     * @param Request $request
-     * @return JsonResponse
+     * Login using Password Grant (Passport).
      */
     public function loginWithPasswordGrant(Request $request): JsonResponse
     {
@@ -113,73 +95,64 @@ class AuthController extends Controller
             ]);
         }
 
-        // Generate token using Passport
-        $tokenResult = $user->createToken('Password Grant Token', []);
+        $tokenResult = $user->createToken('Password Grant Token');
         $token = $tokenResult->token;
-        $token->save();
 
         return response()->json([
             'message' => 'Login successful',
             'user' => $user,
             'token' => [
                 'access_token' => $tokenResult->accessToken,
-                'token_type' => 'Bearer',
-                'expires_in' => $token->expires_at ? $token->expires_at->diffInSeconds(now()) : null,
+                'token_type'   => 'Bearer',
+                'expires_in'   => now()->diffInSeconds($token->expires_at),
             ],
         ]);
     }
 
     /**
-     * Refresh access token using refresh token.
-     *
-     * @param Request $request
-     * @return JsonResponse
+     * Refresh access token.
      */
     public function refreshToken(Request $request): JsonResponse
     {
         $request->validate([
             'refresh_token' => ['required', 'string'],
         ]);
-        
+
         $refreshTokenRepo = app(RefreshTokenRepository::class);
-        $token = $refreshTokenRepo->get($request->refresh_token);
-        
-        if (!$token || $token->isExpired()) {
+        $refreshToken = $refreshTokenRepo->get($request->refresh_token);
+
+        if (!$refreshToken || $refreshToken->isExpired()) {
             return response()->json([
                 'message' => 'Invalid or expired refresh token',
             ], 401);
         }
-        
-        $user = User::find($token->user_id);
+
+        $user = User::find($refreshToken->user_id);
+
         if (!$user) {
             return response()->json([
                 'message' => 'User not found',
             ], 401);
         }
-        
-        // Revoke the old refresh token
+
+        // Revoke old refresh token
         $refreshTokenRepo->revokeRefreshToken($request->refresh_token);
-        
-        // Create a new token
-        $tokenResult = $user->createToken('Access Token', []);
-        $newToken = $tokenResult->token;
-        $newToken->save();
-        
+
+        $tokenResult = $user->createToken('Access Token');
+        $token = $tokenResult->token;
+
         return response()->json([
             'message' => 'Token refreshed successfully',
             'token' => [
                 'access_token' => $tokenResult->accessToken,
-                'token_type' => 'Bearer',
-                'expires_in' => $newToken->expires_at ? $newToken->expires_at->diffInSeconds(now()) : null,
+                'token_type'   => 'Bearer',
+                'expires_in'   => now()->diffInSeconds($token->expires_at),
             ],
         ]);
     }
 
     /**
-     * Get authenticated user details.
-     *
-     * @param Request $request
-     * @return JsonResponse
+     * Get authenticated user.
      */
     public function user(Request $request): JsonResponse
     {
@@ -189,15 +162,10 @@ class AuthController extends Controller
     }
 
     /**
-     * Logout user and revoke current access token.
-     *
-     * @param Request $request
-     * @return JsonResponse
+     * Logout current device.
      */
     public function logout(Request $request): JsonResponse
     {
-
-        // Revoke the current access token (Passport v13+)
         $token = $request->user()->currentAccessToken();
         if ($token) {
             $token->revoke();
@@ -209,17 +177,11 @@ class AuthController extends Controller
     }
 
     /**
-     * Logout from all devices by revoking all tokens.
-     *
-     * @param Request $request
-     * @return JsonResponse
+     * Logout from all devices.
      */
     public function logoutAll(Request $request): JsonResponse
     {
-        // Revoke all tokens for the user
-        $request->user()->tokens()->each(function ($token) {
-            $token->revoke();
-        });
+        $request->user()->tokens()->each(fn ($token) => $token->revoke());
 
         return response()->json([
             'message' => 'Successfully logged out from all devices',

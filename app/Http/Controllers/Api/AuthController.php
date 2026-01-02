@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
-use Laravel\Passport\RefreshTokenRepository;
+
 
 class AuthController extends Controller
 {
@@ -87,6 +87,8 @@ class AuthController extends Controller
         $request->validate([
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
+            'client_id' => ['required', 'string'],
+            'client_secret' => ['required', 'string'],
         ]);
 
         $user = User::where('email', $request->email)->first();
@@ -97,19 +99,21 @@ class AuthController extends Controller
             ]);
         }
 
-        $tokenResult = $user->createToken('Password Grant Token');
-        $token = $tokenResult->token;
-        $token->save();
+        // Create a token request for OAuth 2.0 password grant
+        $tokenRequest = \Illuminate\Support\Facades\Request::create(
+            '/oauth/token',
+            'POST',
+            [
+                'grant_type' => 'password',
+                'client_id' => $request->client_id,
+                'client_secret' => $request->client_secret,
+                'username' => $request->email,
+                'password' => $request->password,
+                'scope' => '',
+            ]
+        );
 
-        return response()->json([
-            'message' => 'Login successful',
-            'user' => $user,
-            'token' => [
-                'access_token' => $tokenResult->accessToken,
-                'token_type'   => 'Bearer',
-                'expires_in'   => $token->expires_at ? now()->diffInSeconds($token->expires_at) : null,
-            ],
-        ]);
+        return app()->handle($tokenRequest);
     }
 
     /**
@@ -121,16 +125,31 @@ class AuthController extends Controller
             'refresh_token' => ['required', 'string'],
         ]);
 
-        $refreshTokenRepo = app(RefreshTokenRepository::class);
-        $refreshToken = $refreshTokenRepo->get($request->refresh_token);
+        // Query the refresh tokens table directly since personal access tokens don't have refresh tokens
+        $refreshToken = \DB::table('oauth_refresh_tokens')
+            ->where('id', $request->refresh_token)
+            ->where('revoked', false)
+            ->where('expires_at', '>', now())
+            ->first();
 
-        if (!$refreshToken || $refreshToken->isExpired()) {
+        if (!$refreshToken) {
             return response()->json([
                 'message' => 'Invalid or expired refresh token',
             ], 401);
         }
 
-        $user = User::find($refreshToken->user_id);
+        // Get the user through the access token
+        $accessToken = \DB::table('oauth_access_tokens')
+            ->where('id', $refreshToken->access_token_id)
+            ->first();
+
+        if (!$accessToken) {
+            return response()->json([
+                'message' => 'Access token not found',
+            ], 401);
+        }
+
+        $user = User::find($accessToken->user_id);
 
         if (!$user) {
             return response()->json([
@@ -138,9 +157,12 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // Revoke old refresh token
-        $refreshTokenRepo->revokeRefreshToken($request->refresh_token);
+        // Revoke the old refresh token
+        \DB::table('oauth_refresh_tokens')
+            ->where('id', $request->refresh_token)
+            ->update(['revoked' => true]);
 
+        // Create a new token for the user
         $tokenResult = $user->createToken('Access Token');
         $token = $tokenResult->token;
         $token->save();
@@ -192,3 +214,4 @@ class AuthController extends Controller
         ]);
     }
 }
+

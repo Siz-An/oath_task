@@ -82,7 +82,7 @@ class AuthController extends Controller
     /**
      * Login using Password Grant (Passport).
      */
-    public function loginWithPasswordGrant(Request $request): JsonResponse
+    public function loginWithPasswordGrant(Request $request)
     {
         $request->validate([
             'email' => ['required', 'string', 'email'],
@@ -99,7 +99,6 @@ class AuthController extends Controller
             ]);
         }
 
-        // Create a token request for OAuth 2.0 password grant
         $tokenRequest = \Illuminate\Support\Facades\Request::create(
             '/oauth/token',
             'POST',
@@ -115,6 +114,7 @@ class AuthController extends Controller
 
         return app()->handle($tokenRequest);
     }
+
 
     /**
      * Refresh access token.

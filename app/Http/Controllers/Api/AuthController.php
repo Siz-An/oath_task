@@ -123,58 +123,30 @@ class AuthController extends Controller
     {
         $request->validate([
             'refresh_token' => ['required', 'string'],
+            'client_id' => ['required', 'string'],
+            'client_secret' => ['required', 'string'],
         ]);
 
-        // Query the refresh tokens table directly since personal access tokens don't have refresh tokens
-        $refreshToken = \DB::table('oauth_refresh_tokens')
-            ->where('id', $request->refresh_token)
-            ->where('revoked', false)
-            ->where('expires_at', '>', now())
-            ->first();
+        // Create a request to Passport's token endpoint for refresh
+        $tokenRequest = \Illuminate\Support\Facades\Request::create(
+            '/oauth/token',
+            'POST',
+            [
+                'grant_type' => 'refresh_token',
+                'refresh_token' => $request->refresh_token,
+                'client_id' => $request->client_id,
+                'client_secret' => $request->client_secret,
+                'scope' => '',
+            ]
+        );
 
-        if (!$refreshToken) {
-            return response()->json([
-                'message' => 'Invalid or expired refresh token',
-            ], 401);
-        }
-
-        // Get the user through the access token
-        $accessToken = \DB::table('oauth_access_tokens')
-            ->where('id', $refreshToken->access_token_id)
-            ->first();
-
-        if (!$accessToken) {
-            return response()->json([
-                'message' => 'Access token not found',
-            ], 401);
-        }
-
-        $user = User::find($accessToken->user_id);
-
-        if (!$user) {
-            return response()->json([
-                'message' => 'User not found',
-            ], 401);
-        }
-
-        // Revoke the old refresh token
-        \DB::table('oauth_refresh_tokens')
-            ->where('id', $request->refresh_token)
-            ->update(['revoked' => true]);
-
-        // Create a new token for the user
-        $tokenResult = $user->createToken('Access Token');
-        $token = $tokenResult->token;
-        $token->save();
-
-        return response()->json([
-            'message' => 'Token refreshed successfully',
-            'token' => [
-                'access_token' => $tokenResult->accessToken,
-                'token_type'   => 'Bearer',
-                'expires_in'   => $token->expires_at ? now()->diffInSeconds($token->expires_at) : null,
-            ],
-        ]);
+        $response = app()->handle($tokenRequest);
+        
+        // Convert the response to JsonResponse
+        $content = $response->getContent();
+        $data = json_decode($content, true);
+        
+        return response()->json($data, $response->getStatusCode());
     }
 
     /**

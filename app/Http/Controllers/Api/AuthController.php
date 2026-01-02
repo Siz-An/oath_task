@@ -33,6 +33,7 @@ class AuthController extends Controller
 
         $tokenResult = $user->createToken('Personal Access Token');
         $token = $tokenResult->token;
+        $token->save();
 
         return response()->json([
             'message' => 'User registered successfully',
@@ -40,7 +41,7 @@ class AuthController extends Controller
             'token' => [
                 'access_token' => $tokenResult->accessToken,
                 'token_type'   => 'Bearer',
-                'expires_in'   => now()->diffInSeconds($token->expires_at),
+                'expires_in'   => $token->expires_at ? now()->diffInSeconds($token->expires_at) : null,
             ],
         ], 201);
     }
@@ -65,6 +66,7 @@ class AuthController extends Controller
 
         $tokenResult = $user->createToken('Personal Access Token');
         $token = $tokenResult->token;
+        $token->save();
 
         return response()->json([
             'message' => 'Login successful',
@@ -72,7 +74,7 @@ class AuthController extends Controller
             'token' => [
                 'access_token' => $tokenResult->accessToken,
                 'token_type'   => 'Bearer',
-                'expires_in'   => now()->diffInSeconds($token->expires_at),
+                'expires_in'   => $token->expires_at ? now()->diffInSeconds($token->expires_at) : null,
             ],
         ]);
     }
@@ -97,6 +99,7 @@ class AuthController extends Controller
 
         $tokenResult = $user->createToken('Password Grant Token');
         $token = $tokenResult->token;
+        $token->save();
 
         return response()->json([
             'message' => 'Login successful',
@@ -104,7 +107,7 @@ class AuthController extends Controller
             'token' => [
                 'access_token' => $tokenResult->accessToken,
                 'token_type'   => 'Bearer',
-                'expires_in'   => now()->diffInSeconds($token->expires_at),
+                'expires_in'   => $token->expires_at ? now()->diffInSeconds($token->expires_at) : null,
             ],
         ]);
     }
@@ -140,13 +143,14 @@ class AuthController extends Controller
 
         $tokenResult = $user->createToken('Access Token');
         $token = $tokenResult->token;
+        $token->save();
 
         return response()->json([
             'message' => 'Token refreshed successfully',
             'token' => [
                 'access_token' => $tokenResult->accessToken,
                 'token_type'   => 'Bearer',
-                'expires_in'   => now()->diffInSeconds($token->expires_at),
+                'expires_in'   => $token->expires_at ? now()->diffInSeconds($token->expires_at) : null,
             ],
         ]);
     }

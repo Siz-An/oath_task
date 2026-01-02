@@ -8,9 +8,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
+use Laravel\Passport\TokenRepository;
+use Laravel\Passport\RefreshTokenRepository;
 
 class AuthController extends Controller
 {
@@ -104,28 +105,27 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        // Make request to Passport's token endpoint
-        $response = Http::asForm()->post(url('/oauth/token'), [
-            'grant_type' => 'password',
-            'client_id' => config('passport.password_grant_client.id'),
-            'client_secret' => config('passport.password_grant_client.secret'),
-            'username' => $request->email,
-            'password' => $request->password,
-            'scope' => '',
-        ]);
+        $user = User::where('email', $request->email)->first();
 
-        if ($response->failed()) {
+        if (!$user || !Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
 
-        $user = User::where('email', $request->email)->first();
+        // Generate token using Passport
+        $tokenResult = $user->createToken('Password Grant Token', []);
+        $token = $tokenResult->token;
+        $token->save();
 
         return response()->json([
             'message' => 'Login successful',
             'user' => $user,
-            'token' => $response->json(),
+            'token' => [
+                'access_token' => $tokenResult->accessToken,
+                'token_type' => 'Bearer',
+                'expires_in' => $token->expires_at ? $token->expires_at->diffInSeconds(now()) : null,
+            ],
         ]);
     }
 
@@ -140,25 +140,38 @@ class AuthController extends Controller
         $request->validate([
             'refresh_token' => ['required', 'string'],
         ]);
-
-        $response = Http::asForm()->post(url('/oauth/token'), [
-            'grant_type' => 'refresh_token',
-            'refresh_token' => $request->refresh_token,
-            'client_id' => config('passport.password_grant_client.id'),
-            'client_secret' => config('passport.password_grant_client.secret'),
-            'scope' => '',
-        ]);
-
-        if ($response->failed()) {
+        
+        $refreshTokenRepo = app(RefreshTokenRepository::class);
+        $token = $refreshTokenRepo->get($request->refresh_token);
+        
+        if (!$token || $token->isExpired()) {
             return response()->json([
-                'message' => 'Could not refresh token',
-                'error' => $response->json(),
+                'message' => 'Invalid or expired refresh token',
             ], 401);
         }
-
+        
+        $user = User::find($token->user_id);
+        if (!$user) {
+            return response()->json([
+                'message' => 'User not found',
+            ], 401);
+        }
+        
+        // Revoke the old refresh token
+        $refreshTokenRepo->revokeRefreshToken($request->refresh_token);
+        
+        // Create a new token
+        $tokenResult = $user->createToken('Access Token', []);
+        $newToken = $tokenResult->token;
+        $newToken->save();
+        
         return response()->json([
             'message' => 'Token refreshed successfully',
-            'token' => $response->json(),
+            'token' => [
+                'access_token' => $tokenResult->accessToken,
+                'token_type' => 'Bearer',
+                'expires_in' => $newToken->expires_at ? $newToken->expires_at->diffInSeconds(now()) : null,
+            ],
         ]);
     }
 

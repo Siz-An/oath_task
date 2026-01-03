@@ -44,6 +44,13 @@ Route::middleware('auth:api')->group(function () {
     });
 
     // Add your protected API routes here
-    // Example:
-    // Route::apiResource('posts', PostController::class);
+    
+    // Example: Role-based access control for posts
+    // Regular users can view posts
+    Route::apiResource('posts', PostController::class)->only(['index', 'show']);
+    
+    // Admin users can manage all posts
+    Route::middleware('role:admin')->group(function () {
+        Route::apiResource('posts', PostController::class)->except(['index', 'show']);
+    });
 });

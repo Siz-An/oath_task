@@ -23,12 +23,14 @@ class AuthController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
             'password' => ['required', 'confirmed', Password::defaults()],
+            'role' => ['sometimes', 'string', 'in:admin,user'] // Allow role parameter during registration
         ]);
 
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
+            'role' => $validated['role'] ?? 'user', // Use provided role or default to 'user'
         ]);
 
         $tokenResult = $user->createToken('Personal Access Token');

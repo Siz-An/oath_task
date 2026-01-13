@@ -26,6 +26,9 @@ Route::prefix('auth')->group(function () {
     // Login with password grant (OAuth 2.0)
     Route::post('/login/oauth', [AuthController::class, 'loginWithPasswordGrant']);
     
+    // Login without password (using temporary token or other identifier)
+    Route::post('/login/no-password', [AuthController::class, 'loginWithoutPassword']);
+    
     // Refresh token
     Route::post('/refresh', [AuthController::class, 'refreshToken']);
 });

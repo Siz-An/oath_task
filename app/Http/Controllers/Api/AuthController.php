@@ -8,8 +8,13 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
+use Carbon\Carbon;
+use Laravel\Passport\Token;
+use Illuminate\Support\Facades\DB;
 
 
 class AuthController extends Controller
@@ -134,6 +139,63 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Login using a temporary token or other identifier (without password).
+     * This method allows authentication using alternative methods like magic links or temporary tokens.
+     */
+    public function loginWithoutPassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'identifier' => ['required', 'string'], // Could be email, username, or temporary token
+            'type' => ['required', 'string', 'in:email,temporary_token,magic_link'], // Type of identifier
+        ]);
+
+        $identifier = $request->input('identifier');
+        $type = $request->input('type');
+
+        // Find user based on identifier depending on type
+        switch ($type) {
+            case 'email':
+                $user = User::where('email', $identifier)->first();
+                if (!$user) {
+                    throw ValidationException::withMessages([
+                        'identifier' => ['No user found with this email.'],
+                    ]);
+                }
+                break;
+            
+            case 'temporary_token':
+            case 'magic_link':
+                $user = User::validateTempToken($identifier);
+                
+                if (!$user) {
+                    throw ValidationException::withMessages([
+                        'identifier' => ['Invalid or expired token.'],
+                    ]);
+                }
+                break;
+                
+            default:
+                throw ValidationException::withMessages([
+                    'type' => ['Invalid identifier type.'],
+                ]);
+        }
+
+        // Create a new access token for the user
+        $tokenResult = $user->createToken('Temporary Token Access');
+        $token = $tokenResult->token;
+        $token->save();
+
+        return response()->json([
+            'message' => 'Login successful',
+            'user' => $user,
+            'token' => [
+                'access_token' => $tokenResult->accessToken,
+                'token_type'   => 'Bearer',
+                'expires_in'   => $token->expires_at ? now()->diffInSeconds($token->expires_at) : null,
+            ],
+        ]);
+    }
 
     /**
      * Refresh access token.
